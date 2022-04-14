@@ -141,6 +141,45 @@ START_TEST(test_nltst_strtok)
 
 /*****************************************************************************/
 
+START_TEST(test_nltst_expected_routes_parse)
+{
+	/* This is a unit test for testing the unit-test helper function
+	 * _nltst_expected_routes_parse(). */
+
+#define _check_erp(str, exp_addr_family, exp_addr_pattern, exp_plen)           \
+	do {                                                                   \
+		const char *_str = (str);                                      \
+		const int _exp_addr_family = (exp_addr_family);                \
+		const char *const _exp_addr_pattern = (exp_addr_pattern);      \
+		const int _exp_plen = (exp_plen);                              \
+		_nltst_auto_clear_select_route NLTstSelectRoute                \
+			_select_route = { 0 };                                 \
+                                                                               \
+		_nltst_expected_routes_parse(_str, &_select_route);            \
+		ck_assert_int_eq(_exp_addr_family, _select_route.addr_family); \
+		if (_nltst_inet_valid(AF_UNSPEC, _exp_addr_pattern)) {         \
+			ck_assert_str_eq(_exp_addr_pattern,                    \
+					 _select_route.addr);                  \
+			ck_assert_ptr_null(_select_route.addr_pattern);        \
+		} else {                                                       \
+			ck_assert_str_eq(_exp_addr_pattern,                    \
+					 _select_route.addr_pattern);          \
+			ck_assert_ptr_null(_select_route.addr);                \
+		}                                                              \
+		ck_assert_int_eq(_exp_plen, _select_route.plen);               \
+	} while (0)
+
+	_check_erp("0.0.0.0", AF_INET, "0.0.0.0", -1);
+	_check_erp("4 0.0.0.0/0", AF_INET, "0.0.0.0", 0);
+	_check_erp(" 6\n 0:0::/0", AF_INET6, "::", 0);
+	_check_erp(" \n 0:0::/100", AF_INET6, "::", 100);
+	_check_erp("6 0:0::*/0   ", AF_INET6, "0:0::*", 0);
+	_check_erp("6 0:0::*/128   ", AF_INET6, "0:0::*", 128);
+	_check_erp("6 0:0::*   ", AF_INET6, "0:0::*", -1);
+}
+
+/*****************************************************************************/
+
 Suite *make_nl_attr_suite(void)
 {
 	Suite *suite = suite_create("Netlink attributes");
@@ -150,6 +189,7 @@ Suite *make_nl_attr_suite(void)
 	tcase_add_test(tc, msg_construct);
 	tcase_add_test(tc, clone_cls_u32);
 	tcase_add_test(tc, test_nltst_strtok);
+	tcase_add_test(tc, test_nltst_expected_routes_parse);
 	suite_add_tcase(suite, tc);
 
 	return suite;

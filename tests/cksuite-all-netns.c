@@ -6,6 +6,7 @@
 
 #include "netlink-private/utils.h"
 #include "netlink/route/link.h"
+#include "netlink/route/route.h"
 
 #include "cksuite-all.h"
 
@@ -91,6 +92,36 @@ START_TEST(cache_and_clone)
 }
 END_TEST
 
+/*****************************************************************************/
+
+static void _route_init(int addr_family, struct nl_sock **sk,
+			struct nl_cache **cache)
+{
+	ck_assert(sk && !*sk);
+	ck_assert(cache && !*cache);
+
+	*sk = _nltst_socket(NETLINK_ROUTE);
+	*cache = _nltst_rtnl_route_alloc_cache(*sk, addr_family);
+}
+
+START_TEST(route_1)
+{
+	_nl_auto_nl_socket struct nl_sock *sk = NULL;
+	_nl_auto_nl_cache struct nl_cache *cache = NULL;
+
+	_nltst_add_link(NULL, "v1", "dummy");
+	//system("ip -d link set v1 up");
+	//system("ip -d link");
+	//system("ip -d route show table all");
+
+	_route_init(AF_INET6, &sk, &cache);
+
+	//_nltst_assert_route_cache(cache, "0.0.0.0/0", "", "");
+}
+END_TEST
+
+/*****************************************************************************/
+
 Suite *make_nl_netns_suite(void)
 {
 	Suite *suite = suite_create("netns");
@@ -99,6 +130,7 @@ Suite *make_nl_netns_suite(void)
 	tcase_add_checked_fixture(tc, nltst_netns_fixture_setup,
 				  nltst_netns_fixture_teardown);
 	tcase_add_test(tc, cache_and_clone);
+	tcase_add_test(tc, route_1);
 	suite_add_tcase(suite, tc);
 
 	return suite;
