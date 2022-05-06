@@ -486,3 +486,190 @@ char **_nltst_strtokv(const char *str)
 	result[r_len] = NULL;
 	return _nl_steal_pointer(&result);
 }
+
+/*****************************************************************************/
+
+void _nltst_expected_routes_parse(const char *str,
+				  NLTstSelectRoute *out_select_route)
+{
+	_nltst_auto_strfreev char **tokens0 = NULL;
+	const char *const *tokens;
+	int addr_family = AF_UNSPEC;
+	int addr_family2 = AF_UNSPEC;
+	NLTstIPAddr addr;
+	int plen = -1;
+	_nl_auto_free char *addr_free = NULL;
+	const char *s_addr_pattern;
+	const char *s_addr = NULL;
+	const char *s;
+	const char *s1;
+
+	ck_assert_ptr_nonnull(str);
+	_nltst_assert_select_route(out_select_route);
+
+	tokens0 = _nltst_strtokv(str);
+	tokens = (const char *const *)tokens0;
+
+	s = tokens[0];
+	if (!s)
+		ck_abort_msg("invalid empty route pattern \"%s\"", str);
+	if (_nl_streq(s, "4") || _nl_streq(s, "inet") ||
+	    _nl_streq(s, "inet4")) {
+		addr_family = AF_INET;
+		tokens++;
+	} else if (_nl_streq(s, "6") || _nl_streq(s, "inet6")) {
+		addr_family = AF_INET6;
+		tokens++;
+	}
+
+	s_addr_pattern = tokens[0];
+	if (!s_addr_pattern) {
+		ck_abort_msg(
+			"the route pattern \"%s\" is invalid and contains no destination address",
+			str);
+	}
+	tokens++;
+
+	s = strchr(s_addr_pattern, '/');
+	if (s) {
+		long int plen2;
+
+		if (s == s_addr_pattern) {
+			ck_abort_msg(
+				"the route pattern \"%s\" contains no valid destination address",
+				str);
+		}
+		addr_free = strndup(s_addr_pattern, s - s_addr_pattern);
+		s_addr_pattern = addr_free;
+		s++;
+
+		errno = 0;
+		plen2 = strtol(s, (char **)&s1, 10);
+		if (errno != 0 || s1[0] != '\0' || plen2 < 0 || plen2 > 128 ||
+		    ((_nltst_str_find_first_not_from_charset(
+			     s, "0123456789"))[0] != '\0')) {
+			ck_abort_msg(
+				"the route pattern \"%s\" contains no valid destination address",
+				str);
+		}
+		plen = plen2;
+	}
+	if ((_nltst_str_find_first_not_from_charset(
+		    s_addr_pattern, "abcdefABCDEF0123456789:.?*"))[0] != '\0') {
+		ck_abort_msg(
+			"the route pattern \"%s\" contains no valid destination address",
+			str);
+	}
+	if (_nltst_inet_pton(addr_family, s_addr_pattern, &addr_family2,
+			     &addr)) {
+		free(addr_free);
+		addr_free = _nltst_inet_ntop_dup(addr_family2, &addr);
+		s_addr_pattern = addr_free;
+		addr_family = addr_family2;
+	} else {
+		if (addr_family == AF_UNSPEC) {
+			ck_abort_msg(
+				"the route pattern \"%s\" contains a wild card address, it requires the address family",
+				str);
+		}
+	}
+
+	ck_assert(addr_family == AF_INET || addr_family == AF_INET6);
+
+	if (plen > (addr_family == AF_INET ? 32 : 128)) {
+		ck_abort_msg(
+			"the route pattern \"%s\" contains no valid destination address (prefix length too large)",
+			str);
+	}
+	ck_assert_int_ge(plen, -1);
+
+	s = tokens[0];
+	if (s) {
+		ck_abort_msg("the route pattern \"%s\" contains extra tokens",
+			     str);
+	}
+
+	if (_nltst_inet_valid(addr_family, s_addr_pattern))
+		_NL_SWAP(&s_addr, &s_addr_pattern);
+
+	_nltst_select_route_clear(out_select_route);
+	*out_select_route = (NLTstSelectRoute){
+		.addr_family = addr_family,
+		.plen = plen,
+		.ifindex = 0,
+		.addr = s_addr ? strdup(s_addr) : NULL,
+		.addr_pattern = s_addr_pattern ? strdup(s_addr_pattern) : NULL,
+	};
+	ck_assert(!s_addr || out_select_route->addr);
+	ck_assert(!s_addr_pattern || out_select_route->addr_pattern);
+	_nltst_assert_select_route(out_select_route);
+}
+
+void _nltst_assert_route_list(struct nl_object *const *objs, ssize_t len,
+			      const char *const *expected_routes)
+{
+	size_t l;
+	size_t i;
+
+	if (len < 0) {
+		l = 0;
+		if (objs) {
+			while (objs[l])
+				l++;
+		}
+	} else
+		l = len;
+
+	for (i = 0; i < l; i++) {
+		_nltst_auto_clear_select_route NLTstSelectRoute select_route = {
+			0
+		};
+		_nl_auto_free char *s = NULL;
+
+		s = _nltst_object_to_string(objs[i]);
+
+		if (!expected_routes[i]) {
+			ck_abort_msg(
+				"No more expected route, but have route %zu (of %zu) as %s",
+				i + 1, l, s);
+		}
+
+		_nltst_expected_routes_parse(expected_routes[i], &select_route);
+	}
+}
+
+void _nltst_assert_route_cache_v(struct nl_cache *cache,
+				 const char *const *expected_routes)
+{
+	_nl_auto_free struct nl_object **objs = NULL;
+	size_t len;
+
+	ck_assert(cache);
+	ck_assert(expected_routes);
+
+	objs = _nltst_cache_get_all(cache, &len);
+
+	_nltst_assert_route_list(objs, len, expected_routes);
+}
+
+/*****************************************************************************/
+
+void _nltst_select_route_clear(NLTstSelectRoute *select_route)
+{
+	_nltst_assert_select_route(select_route);
+
+	_nl_clear_free(&select_route->addr);
+	_nl_clear_free(&select_route->addr_pattern);
+}
+
+bool _nltst_select_route(struct nl_object *route,
+			 const NLTstSelectRoute *selector)
+{
+	ck_assert_ptr_nonnull(route);
+
+	if (!selector)
+		return true;
+
+	ck_assert(0);
+	return false;
+}

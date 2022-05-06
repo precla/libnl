@@ -345,6 +345,54 @@ void nltst_netns_leave(struct nltst_netns *nsdata);
 
 /*****************************************************************************/
 
+typedef struct {
+	int addr_family;
+	int ifindex;
+	int plen;
+	char *addr;
+	char *addr_pattern;
+} NLTstSelectRoute;
+
+#define _nltst_assert_select_route(select_route)                               \
+	do {                                                                   \
+		const NLTstSelectRoute *_select_route = (select_route);        \
+                                                                               \
+		ck_assert_ptr_nonnull(_select_route);                          \
+		_nl_assert_addr_family_or_unspec(_select_route->addr_family);  \
+		ck_assert_int_ge(_select_route->ifindex, 0);                   \
+		ck_assert_int_ge(_select_route->plen, -1);                     \
+		ck_assert_int_le(_select_route->plen,                          \
+				 _select_route->addr_family == AF_INET ? 32 :  \
+									       128); \
+		ck_assert(!_select_route->addr || ({                           \
+			char _buf[INET6_ADDRSTRLEN];                           \
+			const char *_s2;                                       \
+                                                                               \
+			_s2 = _nltst_inet_normalize(                           \
+				_select_route->addr_family,                    \
+				_select_route->addr, _buf);                    \
+			(_select_route->addr_family != AF_UNSPEC && _s2 &&     \
+			 _nl_streq(_s2, _select_route->addr));                 \
+		}));                                                           \
+		ck_assert(!_select_route->addr_pattern ||                      \
+			  !_select_route->addr);                               \
+		ck_assert(!_select_route->addr_pattern ||                      \
+			  _select_route->addr_family != AF_UNSPEC);            \
+	} while (0)
+
+void _nltst_select_route_clear(NLTstSelectRoute *select_route);
+
+#define _nltst_auto_clear_select_route                                         \
+	_nl_auto(_nltst_auto_clear_select_route_fcn)
+_NL_AUTO_DEFINE_FCN_STRUCT(NLTstSelectRoute, _nltst_auto_clear_select_route_fcn,
+			   _nltst_select_route_clear);
+
+bool _nltst_select_route(struct nl_object *route,
+			 const NLTstSelectRoute *selector);
+
+void _nltst_expected_routes_parse(const char *str,
+				  NLTstSelectRoute *out_select_route);
+
 void _nltst_object_identical(const void *a, const void *b);
 
 char *_nltst_object_to_string(struct nl_object *obj);
@@ -363,5 +411,15 @@ struct nl_sock *_nltst_socket(int protocol);
 void _nltst_add_link(struct nl_sock *sk, const char *ifname, const char *kind);
 
 void _nltst_delete_link(struct nl_sock *sk, const char *ifname);
+
+void _nltst_assert_route_list(struct nl_object *const *objs, ssize_t len,
+			      const char *const *expected_routes);
+
+void _nltst_assert_route_cache_v(struct nl_cache *cache,
+				 const char *const *expected_routes);
+
+#define _nltst_assert_route_cache(cache, ...)                                  \
+	_nltst_assert_route_cache_v(                                           \
+		cache, ((const char *const[]){ __VA_ARGS__, NULL }))
 
 #endif /* __NL_TEST_UTIL_H__ */
