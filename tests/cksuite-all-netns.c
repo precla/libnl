@@ -45,7 +45,8 @@ START_TEST(cache_and_clone)
 
 	for (i = 0; i < _NL_N_ELEMENTS(links); i++) {
 		if (links[i].add)
-			_nltst_add_link(NULL, links[i].ifname, links[i].kind);
+			_nltst_add_link(NULL, links[i].ifname, links[i].kind,
+					NULL);
 	}
 
 	sk = _nltst_socket(NETLINK_ROUTE);
